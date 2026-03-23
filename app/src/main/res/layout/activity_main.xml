@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="24dp"
+    android:background="#0a0a0a">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Flinku Android SDK Test"
+        android:textColor="#ffffff"
+        android:textSize="22sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="24dp"/>
+
+    <TextView
+        android:id="@+id/statusText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="SDK Status: Initializing..."
+        android:textColor="#22c55e"
+        android:textSize="14sp"
+        android:background="#111111"
+        android:padding="16dp"
+        android:layout_marginBottom="16dp"/>
+
+    <Button
+        android:id="@+id/matchButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Check for Deep Link"
+        android:backgroundTint="#3b82f6"
+        android:layout_marginBottom="12dp"/>
+
+    <Button
+        android:id="@+id/resetButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Reset SDK State (Debug)"
+        android:backgroundTint="#dc2626"
+        android:layout_marginBottom="24dp"/>
+
+    <TextView
+        android:id="@+id/resultText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Tap 'Check for Deep Link' to test."
+        android:textColor="#9ca3af"
+        android:textSize="14sp"
+        android:background="#111111"
+        android:padding="16dp"/>
+
+</LinearLayout>

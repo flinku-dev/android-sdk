@@ -1,0 +1,23 @@
+# Gradle
+.gradle/
+build/
+**/build/
+
+# Local configuration (may contain secrets — never commit)
+local.properties
+
+# IDE
+.idea/
+*.iml
+.DS_Store
+
+# Android
+captures/
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Keystores
+*.jks
+*.keystore
