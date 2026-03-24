@@ -1,5 +1,3 @@
-# Copy to local.properties (not committed) and set your values.
-# Never commit real API keys.
+# Copy to local.properties (not committed). Set your project base URL.
 
-flinku.api.key=
-flinku.base.url=http://159.65.159.159:3001
+flinku.base.url=https://yourapp.flku.dev

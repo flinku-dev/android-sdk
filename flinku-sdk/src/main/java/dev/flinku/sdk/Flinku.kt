@@ -1,82 +1,97 @@
 package dev.flinku.sdk
 
 import android.content.Context
-import android.os.Build
+import android.util.Log
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 object Flinku {
     private var config: FlinkuConfig? = null
-    private var http: FlinkuHttp? = null
-    private var initialized = false
+    private const val PREFS_NAME = "flinku_prefs"
+    private const val KEY_MATCHED = "flinku_matched"
+    private const val KEY_RESULT = "flinku_match_result"
 
     /**
-     * Initialize the SDK. Call this in Application.onCreate() or MainActivity.onCreate()
+     * Configure Flinku with your project subdomain URL.
+     * Call once in Application.onCreate() before any match() call.
+     *
+     * Example:
+     * ```kotlin
+     * Flinku.configure(context, baseUrl = "https://yourapp.flku.dev")
+     * ```
      */
-    fun configure(context: Context, config: FlinkuConfig) {
-        this.config = config
-        this.http = FlinkuHttp(config.baseUrl, config.matchTimeoutSeconds)
-        FlinkuLogger.debugMode = config.debugMode
-        FlinkuStorage.init(context.applicationContext)
-        initialized = true
-        FlinkuLogger.log("SDK configured with baseUrl: ${config.baseUrl}")
+    fun configure(context: Context, baseUrl: String, debug: Boolean = false, timeoutMs: Long = 5000L) {
+        config = FlinkuConfig(baseUrl = baseUrl, debug = debug, timeoutMs = timeoutMs)
     }
 
     /**
-     * Check for deferred deep link. Call once on app first launch.
-     * Must be called from a coroutine scope.
+     * Returns true if match() has already found a match.
+     * Prevents double-matching across app launches.
      */
-    suspend fun match(): FlinkuLink {
-        if (!initialized || config == null || http == null) {
-            FlinkuLogger.error("SDK not initialized. Call Flinku.configure() first.")
-            return FlinkuLink.noMatch
-        }
-
-        if (FlinkuStorage.hasMatched) {
-            FlinkuLogger.log("Already matched previously, skipping.")
-            return FlinkuLink.noMatch
-        }
-
-        if (FlinkuStorage.hasLaunched) {
-            FlinkuLogger.log("Not first launch, skipping match.")
-            return FlinkuLink.noMatch
-        }
-
-        FlinkuLogger.log("Attempting deferred deep link match...")
-
-        return try {
-            val body = JSONObject().apply {
-                put("apiKey", config!!.apiKey)
-                put("deviceInfo", JSONObject().apply {
-                    put("platform", "android")
-                    put("userAgent", "FlinkuSDK/Android/${Build.VERSION.RELEASE}")
-                    put("timestamp", System.currentTimeMillis())
-                })
-            }
-
-            val response = http!!.post("/api/match", body)
-            val link = FlinkuLink.fromJson(response)
-
-            FlinkuStorage.hasLaunched = true
-            if (link.matched) {
-                FlinkuStorage.hasMatched = true
-                FlinkuLogger.log("Match found: ${link.deepLink}")
-            } else {
-                FlinkuLogger.log("No match found.")
-            }
-
-            link
-        } catch (e: Exception) {
-            FlinkuLogger.error("Match failed", e)
-            FlinkuStorage.hasLaunched = true
-            FlinkuLink.noMatch
-        }
+    fun hasMatched(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getBoolean(KEY_MATCHED, false)
     }
 
     /**
-     * Debug only — reset match state to test again
+     * Match the current device to a previously clicked Flinku link.
+     * Call once on app launch — runs on a background thread automatically.
+     * Must be called from a coroutine or background thread.
      */
-    fun resetForTesting() {
-        FlinkuStorage.reset()
-        FlinkuLogger.log("SDK state reset for testing.")
+    suspend fun match(context: Context): FlinkuLink {
+        val cfg = config ?: run {
+            Log.e("Flinku", "Not configured. Call Flinku.configure() first.")
+            return FlinkuLink.notMatched
+        }
+
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+        // Prevent double matching
+        if (prefs.getBoolean(KEY_MATCHED, false)) {
+            val stored = prefs.getString(KEY_RESULT, null)
+            if (stored != null) {
+                return try {
+                    FlinkuLink.fromJson(JSONObject(stored))
+                } catch (e: Exception) {
+                    FlinkuLink.notMatched
+                }
+            }
+            return FlinkuLink.notMatched
+        }
+
+        val result = withContext(Dispatchers.IO) {
+            FlinkuHttp.match(cfg)
+        }
+
+        if (result.matched) {
+            prefs.edit()
+                .putBoolean(KEY_MATCHED, true)
+                .putString(
+                    KEY_RESULT,
+                    JSONObject().apply {
+                        put("matched", true)
+                        put("deepLink", result.deepLink ?: "")
+                        put("slug", result.slug ?: "")
+                        put("subdomain", result.subdomain ?: "")
+                        put("title", result.title ?: "")
+                        put("projectId", result.projectId ?: "")
+                    }.toString()
+                )
+                .apply()
+        }
+
+        return result
+    }
+
+    /**
+     * Reset stored match result. Use only during development/testing.
+     */
+    fun reset(context: Context) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .remove(KEY_MATCHED)
+            .remove(KEY_RESULT)
+            .apply()
     }
 }

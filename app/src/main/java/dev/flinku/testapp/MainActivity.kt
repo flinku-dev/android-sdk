@@ -6,7 +6,6 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import dev.flinku.sdk.Flinku
-import dev.flinku.sdk.FlinkuConfig
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
@@ -20,33 +19,22 @@ class MainActivity : AppCompatActivity() {
         val resetButton = findViewById<Button>(R.id.resetButton)
         val matchButton = findViewById<Button>(R.id.matchButton)
 
-        if (BuildConfig.FLINKU_API_KEY.isEmpty()) {
-            statusText.text =
-                "SDK Status: Missing API key\nAdd flinku.api.key to local.properties (see local.properties.example)"
-            resultText.text = "Configure local.properties before testing."
-        } else {
-            Flinku.configure(
-                this,
-                FlinkuConfig(
-                    apiKey = BuildConfig.FLINKU_API_KEY,
-                    baseUrl = BuildConfig.FLINKU_BASE_URL,
-                    debugMode = true
-                )
-            )
-            statusText.text = "SDK Status: Connected\nServer: ${BuildConfig.FLINKU_BASE_URL}"
-        }
+        Flinku.configure(
+            this,
+            baseUrl = BuildConfig.FLINKU_BASE_URL,
+            debug = true
+        )
+        statusText.text = "SDK Status: Connected\nProject URL: ${BuildConfig.FLINKU_BASE_URL}"
 
         matchButton.setOnClickListener {
-            if (BuildConfig.FLINKU_API_KEY.isEmpty()) {
-                resultText.text = "Set flinku.api.key in local.properties first."
-                return@setOnClickListener
-            }
             lifecycleScope.launch {
                 statusText.text = "Checking for deep link..."
-                val link = Flinku.match()
+                val link = Flinku.match(this@MainActivity)
                 if (link.matched) {
                     resultText.text =
-                        "✅ Deep Link Matched!\n\nDeep Link: ${link.deepLink}\nSlug: ${link.slug}\nParams: ${link.params}"
+                        "✅ Deep Link Matched!\n\nDeep Link: ${link.deepLink}\nSlug: ${link.slug}\n" +
+                        "Subdomain: ${link.subdomain}\nTitle: ${link.title}\nParams: ${link.params}\n" +
+                        "Project: ${link.projectId}"
                 } else {
                     resultText.text =
                         "❌ No match found.\n\nClick a Flinku link in your browser first, then tap Match again."
@@ -56,7 +44,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         resetButton.setOnClickListener {
-            Flinku.resetForTesting()
+            Flinku.reset(this)
             resultText.text = "SDK state reset. You can test again."
         }
     }

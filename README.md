@@ -1,52 +1,105 @@
 # Flinku Android SDK
 
-Native Kotlin SDK for Flinku deep linking. Supports Android 5.0+ (API 21+).
-
-## Security
-
-- Do not commit API keys or other secrets. The test app reads `flinku.api.key` and optional `flinku.base.url` from `local.properties` (gitignored). Copy `local.properties.example` to `local.properties` and fill in values locally.
+Official Android SDK for [Flinku](https://flinku.dev) — deferred deep linking for Android. The modern replacement for Firebase Dynamic Links.
 
 ## Installation
 
-### Gradle
+Add to your `build.gradle`:
 
-Add to your `build.gradle.kts`:
-
-```kotlin
+```gradle
 dependencies {
-    implementation("dev.flinku:flinku-sdk:0.1.0")
+    implementation 'dev.flinku:flinku-android-sdk:0.2.0'
 }
 ```
 
-## Usage
+Or add via JitPack — add to your root `build.gradle`:
 
-### Initialize in Application or MainActivity
-
-```kotlin
-import dev.flinku.sdk.Flinku
-import dev.flinku.sdk.FlinkuConfig
-
-Flinku.configure(this, FlinkuConfig(
-    apiKey = "<your-api-key>",
-    debugMode = true
-))
-```
-
-Load the API key from your own secure storage or build configuration; do not hardcode production keys in source control.
-
-### Check for deferred deep link
-
-```kotlin
-lifecycleScope.launch {
-    val link = Flinku.match()
-    if (link.matched) {
-        // Navigate to link.deepLink
+```gradle
+allprojects {
+    repositories {
+        maven { url 'https://jitpack.io' }
     }
 }
 ```
 
+Then:
+
+```gradle
+dependencies {
+    implementation 'com.github.flinku-dev:android-sdk:0.2.0'
+}
+```
+
+## Setup
+
+Configure in your Application class:
+
+```kotlin
+class MyApplication : Application() {
+    override fun onCreate() {
+        super.onCreate()
+        Flinku.configure(this, baseUrl = "https://yourapp.flku.dev")
+    }
+}
+```
+
+## Handle deep links
+
+Call `Flinku.match()` in your splash or main activity:
+
+```kotlin
+class SplashActivity : AppCompatActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        lifecycleScope.launch {
+            val link = Flinku.match(this@SplashActivity)
+
+            if (link.matched) {
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link.deepLink)))
+            } else {
+                startActivity(Intent(this@SplashActivity, MainActivity::class.java))
+            }
+            finish()
+        }
+    }
+}
+```
+
+## Query parameters
+
+```kotlin
+lifecycleScope.launch {
+    val link = Flinku.match(this@MyActivity)
+
+    if (link.matched) {
+        val ref = link.params?.get("ref") as? String       // e.g. "instagram"
+        val promo = link.params?.get("promo") as? String   // e.g. "SAVE20"
+    }
+}
+```
+
+## Android manifest setup
+
+Add intent filters to your `AndroidManifest.xml`:
+
+```xml
+<intent-filter android:autoVerify="true">
+    <action android:name="android.intent.action.VIEW" />
+    <category android:name="android.intent.category.DEFAULT" />
+    <category android:name="android.intent.category.BROWSABLE" />
+    <data
+        android:scheme="https"
+        android:host="yourapp.flku.dev" />
+</intent-filter>
+```
+
+## Reset (testing only)
+
+```kotlin
+Flinku.reset(context)
+```
+
 ## Test app
 
-1. Copy `local.properties.example` to `local.properties` in the project root.
-2. Set `flinku.api.key` to your test key.
-3. Build and run the `:app` module.
+Copy `local.properties.example` to `local.properties` and set `flinku.base.url` to your project URL. Never commit secrets or production URLs you consider sensitive if your policy forbids it.

@@ -1,3 +1,6 @@
+group = "dev.flinku"
+version = "0.2.0"
+
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
@@ -23,7 +26,6 @@ android {
 }
 
 dependencies {
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("androidx.core:core-ktx:1.12.0")
 }
