@@ -1,3 +1,7 @@
-# Copy to local.properties (not committed). Set your project base URL.
+# Copy to local.properties (not committed).
 
+# Project URL (subdomain)
 flinku.base.url=https://yourapp.flku.dev
+
+# Optional — only needed to test createLink / createLinks in the sample app
+# flinku.api.key=

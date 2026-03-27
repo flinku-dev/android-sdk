@@ -22,6 +22,7 @@ class MainActivity : AppCompatActivity() {
         Flinku.configure(
             this,
             baseUrl = BuildConfig.FLINKU_BASE_URL,
+            apiKey = BuildConfig.FLINKU_API_KEY.takeIf { it.isNotEmpty() },
             debug = true
         )
         statusText.text = "SDK Status: Connected\nProject URL: ${BuildConfig.FLINKU_BASE_URL}"

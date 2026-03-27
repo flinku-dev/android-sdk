@@ -1,3 +1,10 @@
+## 0.3.0
+
+* Added `FlinkuLinkOptions`, `FlinkuCreatedLink`, and `FlinkuException`
+* Added `createLink()` and `createLinks()` (Bearer auth; calls `apiBaseUrl` derived from project `baseUrl`)
+* Optional `apiKey` on `Flinku.configure()` for link creation APIs
+* `apiBaseUrl` strips the project subdomain (e.g. `https://myapp.flku.dev` → `https://flku.dev`)
+
 ## 0.2.0
 
 * Project-based architecture — baseUrl is now your project subdomain URL

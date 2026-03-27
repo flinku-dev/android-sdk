@@ -8,7 +8,7 @@ Add to your `build.gradle`:
 
 ```gradle
 dependencies {
-    implementation 'dev.flinku:flinku-android-sdk:0.2.0'
+    implementation 'dev.flinku:flinku-android-sdk:0.3.0'
 }
 ```
 
@@ -26,7 +26,7 @@ Then:
 
 ```gradle
 dependencies {
-    implementation 'com.github.flinku-dev:android-sdk:0.2.0'
+    implementation 'com.github.flinku-dev:android-sdk:0.3.0'
 }
 ```
 
@@ -38,7 +38,11 @@ Configure in your Application class:
 class MyApplication : Application() {
     override fun onCreate() {
         super.onCreate()
-        Flinku.configure(this, baseUrl = "https://yourapp.flku.dev")
+        Flinku.configure(
+            this,
+            baseUrl = "https://yourapp.flku.dev",
+            apiKey = "<your-api-key>" // required only for createLink / createLinks
+        )
     }
 }
 ```
@@ -63,6 +67,34 @@ class SplashActivity : AppCompatActivity() {
             finish()
         }
     }
+}
+```
+
+## Create short links (API key required)
+
+Link creation calls the platform API at `apiBaseUrl` (your project subdomain is stripped from `baseUrl`, e.g. `https://myapp.flku.dev` → `https://flku.dev`).
+
+```kotlin
+lifecycleScope.launch {
+    val created = Flinku.createLink(
+        FlinkuLinkOptions(
+            title = "Summer sale",
+            deepLink = "myapp://promo/summer",
+            params = mapOf("ref" to "email")
+        )
+    )
+    // created.shortUrl, created.slug, …
+}
+```
+
+```kotlin
+lifecycleScope.launch {
+    val batch = Flinku.createLinks(
+        listOf(
+            FlinkuLinkOptions(title = "A", deepLink = "myapp://a"),
+            FlinkuLinkOptions(title = "B", deepLink = "myapp://b")
+        )
+    )
 }
 ```
 

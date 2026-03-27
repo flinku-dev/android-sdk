@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 
 object Flinku {
@@ -21,8 +22,54 @@ object Flinku {
      * Flinku.configure(context, baseUrl = "https://yourapp.flku.dev")
      * ```
      */
-    fun configure(context: Context, baseUrl: String, debug: Boolean = false, timeoutMs: Long = 5000L) {
-        config = FlinkuConfig(baseUrl = baseUrl, debug = debug, timeoutMs = timeoutMs)
+    fun configure(
+        context: Context,
+        baseUrl: String,
+        apiKey: String? = null,
+        debug: Boolean = false,
+        timeoutMs: Long = 5000L
+    ) {
+        config = FlinkuConfig(baseUrl = baseUrl, apiKey = apiKey, debug = debug, timeoutMs = timeoutMs)
+    }
+
+    /**
+     * Create a single short link. Requires [FlinkuConfig.apiKey] (set via [configure]).
+     */
+    suspend fun createLink(options: FlinkuLinkOptions): FlinkuCreatedLink {
+        val cfg = config ?: throw FlinkuException("Not configured. Call Flinku.configure() first.")
+        val apiKey = cfg.apiKey ?: throw FlinkuException("apiKey is required to create links")
+        val body = options.toJsonObject()
+        val response = withContext(Dispatchers.IO) {
+            FlinkuHttp.postAuthorizedJson(
+                cfg.apiBaseUrl,
+                "/api/links",
+                body,
+                apiKey,
+                cfg.timeoutMs
+            )
+        }
+        return parseCreatedLinkResponse(response)
+    }
+
+    /**
+     * Create multiple short links in one request. Requires [FlinkuConfig.apiKey] (set via [configure]).
+     */
+    suspend fun createLinks(links: List<FlinkuLinkOptions>): List<FlinkuCreatedLink> {
+        val cfg = config ?: throw FlinkuException("Not configured. Call Flinku.configure() first.")
+        val apiKey = cfg.apiKey ?: throw FlinkuException("apiKey is required to create links")
+        val linksArray = JSONArray()
+        links.forEach { linksArray.put(it.toJsonObject()) }
+        val body = JSONObject().put("links", linksArray)
+        val responseText = withContext(Dispatchers.IO) {
+            FlinkuHttp.postAuthorizedText(
+                cfg.apiBaseUrl,
+                "/api/links/bulk",
+                body,
+                apiKey,
+                cfg.timeoutMs
+            )
+        }
+        return parseCreatedLinksFromBody(responseText)
     }
 
     /**
