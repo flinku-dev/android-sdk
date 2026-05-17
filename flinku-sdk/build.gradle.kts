@@ -1,5 +1,5 @@
 group = "dev.flinku"
-version = "0.3.0"
+version = "0.3.1"
 
 plugins {
     alias(libs.plugins.android.library)
@@ -26,6 +26,7 @@ android {
 }
 
 dependencies {
+    implementation("com.android.installreferrer:installreferrer:2.2")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("androidx.core:core-ktx:1.12.0")
 }

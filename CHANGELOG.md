@@ -1,3 +1,10 @@
+## 0.3.1
+
+* Play Install Referrer support for deterministic deferred deep linking
+* Clipboard URL check before fingerprint match (clears clipboard after read)
+* Added `matchType` to `FlinkuLink`
+* `matchWithBody()` helper for custom `/api/match` payloads
+
 ## 0.3.0
 
 * Added `FlinkuLinkOptions`, `FlinkuCreatedLink`, and `FlinkuException`

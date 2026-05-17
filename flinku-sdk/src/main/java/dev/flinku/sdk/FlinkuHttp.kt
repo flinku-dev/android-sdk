@@ -94,7 +94,10 @@ internal object FlinkuHttp {
             put("subdomain", config.subdomain)
             put("userAgent", System.getProperty("http.agent") ?: "Android")
         }
+        return matchWithBody(config, body)
+    }
 
+    fun matchWithBody(config: FlinkuConfig, body: JSONObject): FlinkuLink {
         for (attempt in 0..1) {
             var connection: HttpURLConnection? = null
             try {

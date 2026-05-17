@@ -8,7 +8,7 @@ Add to your `build.gradle`:
 
 ```gradle
 dependencies {
-    implementation 'dev.flinku:flinku-android-sdk:0.3.0'
+    implementation 'dev.flinku:flinku-android-sdk:0.3.1'
 }
 ```
 
@@ -26,7 +26,7 @@ Then:
 
 ```gradle
 dependencies {
-    implementation 'com.github.flinku-dev:android-sdk:0.3.0'
+    implementation 'com.github.flinku-dev:android-sdk:0.3.1'
 }
 ```
 
