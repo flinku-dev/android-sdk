@@ -6,7 +6,9 @@ import android.content.Context
 import android.util.Log
 import com.android.installreferrer.api.InstallReferrerClient
 import com.android.installreferrer.api.InstallReferrerStateListener
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -75,6 +77,39 @@ object Flinku {
             )
         }
         return parseCreatedLinkResponse(response)
+    }
+
+    /**
+     * Create a short link optimistically: returns immediately with a locally generated
+     * slug and short URL, then registers the link on the server in the background.
+     * Requires [FlinkuConfig.apiKey] (set via [configure]).
+     */
+    fun createLinkInstant(options: FlinkuLinkOptions): FlinkuCreatedLink {
+        val cfg = config ?: throw FlinkuException("Not configured. Call Flinku.configure() first.")
+        val apiKey = cfg.apiKey ?: throw FlinkuException("apiKey is required to create links")
+        val slug = generateInstantSlug(options.title)
+        val shortUrl = "https://${cfg.subdomain}.flku.dev/$slug"
+        val body = options.toJsonObject().apply { put("slug", slug) }
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                FlinkuHttp.postAuthorizedJson(
+                    cfg.apiBaseUrl,
+                    "/api/links",
+                    body,
+                    apiKey,
+                    cfg.timeoutMs
+                )
+            } catch (e: Exception) {
+                Log.e("Flinku", "createLinkInstant background error: ${e.message}")
+            }
+        }
+        return FlinkuCreatedLink(
+            id = "",
+            slug = slug,
+            shortUrl = shortUrl,
+            deepLink = options.deepLink,
+            params = options.params,
+        )
     }
 
     /**
@@ -208,5 +243,18 @@ object Flinku {
         val json = JSONObject()
         body.forEach { (key, value) -> json.put(key, value) }
         return FlinkuHttp.matchWithBody(config, json)
+    }
+
+    private fun generateInstantSlug(title: String): String {
+        var base = title.lowercase().trim()
+        base = base.replace(Regex("[^a-z0-9\\s-]"), "")
+        base = base.replace(Regex("\\s+"), "-")
+        base = base.replace(Regex("-+"), "-").trim('-')
+        if (base.isEmpty()) {
+            base = "link"
+        }
+        val chars = "abcdefghijklmnopqrstuvwxyz0123456789"
+        val suffix = (1..4).map { chars.random() }.joinToString("")
+        return "$base-$suffix"
     }
 }

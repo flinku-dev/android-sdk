@@ -1,3 +1,5 @@
+## 0.3.1 - Add createLinkInstant for instant link creation without waiting for server
+
 ## 0.3.1
 
 * Play Install Referrer support for deterministic deferred deep linking
