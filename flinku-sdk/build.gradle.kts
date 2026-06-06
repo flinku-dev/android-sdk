@@ -1,5 +1,5 @@
 group = "dev.flinku"
-version = "0.3.1"
+version = "0.3.2"
 
 plugins {
     alias(libs.plugins.android.library)
@@ -14,6 +14,10 @@ android {
         minSdk = 21
         targetSdk = 35
         consumerProguardFiles("consumer-rules.pro")
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     compileOptions {

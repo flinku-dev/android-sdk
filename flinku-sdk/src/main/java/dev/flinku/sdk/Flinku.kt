@@ -17,6 +17,7 @@ object Flinku {
     private var _playReferrer: String? = null
 
     private var config: FlinkuConfig? = null
+    private var secretKeyWarningShown = false
     private const val PREFS_NAME = "flinku_prefs"
     private const val KEY_MATCHED = "flinku_matched"
     private const val KEY_RESULT = "flinku_match_result"
@@ -25,9 +26,16 @@ object Flinku {
      * Configure Flinku with your project subdomain URL.
      * Call once in Application.onCreate() before any match() call.
      *
+     * [apiKey] accepts publishable keys (`flk_pk_`) or secret keys (`flk_live_`).
+     * Use your publishable key (`flk_pk_`) in apps. Never embed your secret key (`flk_live_`).
+     *
      * Example:
      * ```kotlin
-     * Flinku.configure(context, baseUrl = "https://yourapp.flku.dev")
+     * Flinku.configure(
+     *     context,
+     *     baseUrl = "https://yourapp.flku.dev",
+     *     apiKey = "flk_pk_..."
+     * )
      * ```
      */
     fun configure(
@@ -38,6 +46,18 @@ object Flinku {
         timeoutMs: Long = 5000L
     ) {
         config = FlinkuConfig(baseUrl = baseUrl, apiKey = apiKey, debug = debug, timeoutMs = timeoutMs)
+
+        if (apiKey != null && apiKey.startsWith("flk_live_") && !secretKeyWarningShown) {
+            secretKeyWarningShown = true
+            if (BuildConfig.DEBUG) {
+                Log.w(
+                    "Flinku",
+                    "FLINKU WARNING: You are embedding a secret key (flk_live_) in your app. " +
+                        "Anyone can extract it and gain full access to your links. " +
+                        "Use your publishable key (flk_pk_) instead — find it in your project settings at app.flinku.dev."
+                )
+            }
+        }
 
         // Read Play Install Referrer for deterministic deferred deep linking
         val referrerClient = InstallReferrerClient.newBuilder(context.applicationContext).build()
@@ -100,7 +120,9 @@ object Flinku {
                     cfg.timeoutMs
                 )
             } catch (e: Exception) {
-                Log.e("Flinku", "createLinkInstant background error: ${e.message}")
+                if (cfg.debug) {
+                    Log.e("Flinku", "createLinkInstant background error: ${e.message}")
+                }
             }
         }
         return FlinkuCreatedLink(

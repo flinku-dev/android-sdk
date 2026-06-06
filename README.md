@@ -8,7 +8,7 @@ Add to your `build.gradle`:
 
 ```gradle
 dependencies {
-    implementation 'dev.flinku:flinku-android-sdk:0.3.1'
+    implementation 'dev.flinku:flinku-android-sdk:0.3.2'
 }
 ```
 
@@ -26,7 +26,7 @@ Then:
 
 ```gradle
 dependencies {
-    implementation 'com.github.flinku-dev:android-sdk:0.3.1'
+    implementation 'com.github.flinku-dev:android-sdk:0.3.2'
 }
 ```
 
@@ -41,7 +41,7 @@ class MyApplication : Application() {
         Flinku.configure(
             this,
             baseUrl = "https://yourapp.flku.dev",
-            apiKey = "<your-api-key>" // required only for createLink / createLinks
+            apiKey = "flk_pk_..." // required only for createLink / createLinks
         )
     }
 }
@@ -71,6 +71,8 @@ class SplashActivity : AppCompatActivity() {
 ```
 
 ## Create short links (API key required)
+
+Use your publishable key (`flk_pk_`) in apps. Never embed your secret key (`flk_live_`).
 
 Link creation calls the platform API at `apiBaseUrl` (your project subdomain is stripped from `baseUrl`, e.g. `https://myapp.flku.dev` → `https://flku.dev`).
 

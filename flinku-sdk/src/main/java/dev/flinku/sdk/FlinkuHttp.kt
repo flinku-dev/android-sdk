@@ -41,7 +41,7 @@ internal object FlinkuHttp {
             } ?: ""
 
             if (code !in 200..299) {
-                throw FlinkuException("HTTP $code: $text")
+                throw FlinkuException(linkCreationErrorMessage(text, code))
             }
             return JSONObject(text)
         } finally {
@@ -81,7 +81,7 @@ internal object FlinkuHttp {
             } ?: ""
 
             if (code !in 200..299) {
-                throw FlinkuException("HTTP $code: $text")
+                throw FlinkuException(linkCreationErrorMessage(text, code))
             }
             return text
         } finally {
@@ -128,4 +128,20 @@ internal object FlinkuHttp {
         }
         return FlinkuLink.notMatched
     }
+}
+
+internal fun linkCreationErrorMessage(body: String, statusCode: Int): String {
+    if (body.isEmpty()) {
+        return "Failed to create link: HTTP $statusCode"
+    }
+    try {
+        val json = JSONObject(body)
+        val error = json.optString("error", "")
+        if (error.isNotEmpty()) return error
+        val message = json.optString("message", "")
+        if (message.isNotEmpty()) return message
+    } catch (_: Exception) {
+        // fall through to raw body
+    }
+    return body
 }
