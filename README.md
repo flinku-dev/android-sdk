@@ -4,25 +4,17 @@ Official Android SDK for [Flinku](https://flinku.dev) — deferred deep linking 
 
 ## Installation
 
-Add to your `build.gradle`:
+Add the JitPack repository to your root `settings.gradle` (or `settings.gradle.kts`):
 
 ```gradle
-dependencies {
-    implementation 'dev.flinku:flinku-android-sdk:0.6.0'
-}
-```
-
-Or add via JitPack — add to your root `build.gradle`:
-
-```gradle
-allprojects {
+dependencyResolutionManagement {
     repositories {
         maven { url 'https://jitpack.io' }
     }
 }
 ```
 
-Then:
+Then add the dependency:
 
 ```gradle
 dependencies {
