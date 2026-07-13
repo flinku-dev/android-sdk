@@ -8,7 +8,7 @@ Add to your `build.gradle`:
 
 ```gradle
 dependencies {
-    implementation 'dev.flinku:flinku-android-sdk:0.3.2'
+    implementation 'dev.flinku:flinku-android-sdk:0.6.0'
 }
 ```
 
@@ -26,7 +26,7 @@ Then:
 
 ```gradle
 dependencies {
-    implementation 'com.github.flinku-dev:android-sdk:0.3.2'
+    implementation 'com.github.flinku-dev:android-sdk:0.6.0'
 }
 ```
 
@@ -98,6 +98,13 @@ lifecycleScope.launch {
         )
     )
 }
+```
+
+## Referrals
+
+```kotlin
+Flinku.setUserId(context, user.id)
+Flinku.qualifyReferral(context, "purchase")
 ```
 
 ## Query parameters

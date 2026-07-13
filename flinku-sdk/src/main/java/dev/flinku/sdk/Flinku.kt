@@ -18,45 +18,84 @@ object Flinku {
 
     private var config: FlinkuConfig? = null
     private var secretKeyWarningShown = false
-    private const val PREFS_NAME = "flinku_prefs"
+    private var referralApiKeyWarningShown = false
     private const val KEY_MATCHED = "flinku_matched"
     private const val KEY_RESULT = "flinku_match_result"
+    private const val KEY_USER_ID = "flinku_user_id"
+    private const val KEY_REFERRAL_PROJECT_ID = "flinku_referral_project_id"
+    private const val PENDING_REFERRAL_KEY_PREFIX = "flinku_pending_referral_"
+    private const val PENDING_REFERRAL_TTL_MS = 30L * 24 * 60 * 60 * 1000
 
-    /**
-     * Configure Flinku with your project subdomain URL.
-     * Call once in Application.onCreate() before any match() call.
-     *
-     * [apiKey] accepts publishable keys (`flk_pk_`) or secret keys (`flk_live_`).
-     * Use your publishable key (`flk_pk_`) in apps. Never embed your secret key (`flk_live_`).
-     *
-     * Example:
-     * ```kotlin
-     * Flinku.configure(
-     *     context,
-     *     baseUrl = "https://yourapp.flku.dev",
-     *     apiKey = "flk_pk_..."
-     * )
-     * ```
-     */
+    /** Injectable persistence (defaults to SharedPreferences on [configure]). */
+    @JvmField
+    var store: FlinkuKeyValueStore? = null
+
+    /** Injectable HTTP client (defaults to real network). */
+    @JvmField
+    var network: FlinkuNetworkClient? = null
+
+    /** Optional sink for log lines (used by unit tests). */
+    @JvmField
+    var logSink: ((String) -> Unit)? = null
+
+    private fun referralTrackedKey(projectId: String, userId: String) =
+        "referral_tracked_${projectId}_$userId"
+
+    private fun pendingReferralKey(projectId: String) = "$PENDING_REFERRAL_KEY_PREFIX$projectId"
+
+    private fun getStore(context: Context): FlinkuKeyValueStore {
+        store?.let { return it }
+        return SharedPreferencesKeyValueStore(context.applicationContext).also { store = it }
+    }
+
+    private fun getNetwork(): FlinkuNetworkClient {
+        network?.let { return it }
+        return DefaultFlinkuNetworkClient().also { network = it }
+    }
+
+    private fun log(message: String) {
+        Log.w("Flinku", message)
+        logSink?.invoke(message)
+    }
+
+    /** Resets injectable deps and static flags for unit tests. */
+    @JvmStatic
+    fun resetForTesting() {
+        config = null
+        secretKeyWarningShown = false
+        referralApiKeyWarningShown = false
+        store = null
+        network = null
+        logSink = null
+        _playReferrer = null
+    }
+
     fun configure(
         context: Context,
         baseUrl: String,
         apiKey: String? = null,
         debug: Boolean = false,
-        timeoutMs: Long = 5000L
+        timeoutMs: Long = 5000L,
+        readClipboard: Boolean = true,
     ) {
-        config = FlinkuConfig(baseUrl = baseUrl, apiKey = apiKey, debug = debug, timeoutMs = timeoutMs)
+        config = FlinkuConfig(baseUrl = baseUrl, apiKey = apiKey, debug = debug, timeoutMs = timeoutMs, readClipboard = readClipboard)
+        val prefsStore = getStore(context)
 
         if (apiKey != null && apiKey.startsWith("flk_live_") && !secretKeyWarningShown) {
             secretKeyWarningShown = true
             if (BuildConfig.DEBUG) {
-                Log.w(
-                    "Flinku",
+                log(
                     "FLINKU WARNING: You are embedding a secret key (flk_live_) in your app. " +
                         "Anyone can extract it and gain full access to your links. " +
-                        "Use your publishable key (flk_pk_) instead — find it in your project settings at app.flinku.dev."
+                        "Use your publishable key (flk_pk_) instead — find it in your project settings at app.flinku.dev.",
                 )
             }
+        }
+
+        // Retry a pending referral track if a userId was already stored (e.g. app relaunch).
+        val userId = prefsStore.getString(KEY_USER_ID)?.trim().orEmpty()
+        if (userId.isNotEmpty()) {
+            trackReferralInBackground(prefsStore, userId)
         }
 
         // Read Play Install Referrer for deterministic deferred deep linking
@@ -69,7 +108,7 @@ object Flinku {
                         if (referrer.contains("flinku_click=")) {
                             _playReferrer = referrer
                         }
-                    } catch (e: Exception) {
+                    } catch (_: Exception) {
                         // ignore
                     }
                 }
@@ -80,9 +119,6 @@ object Flinku {
         })
     }
 
-    /**
-     * Create a single short link. Requires [FlinkuConfig.apiKey] (set via [configure]).
-     */
     suspend fun createLink(options: FlinkuLinkOptions): FlinkuCreatedLink {
         val cfg = config ?: throw FlinkuException("Not configured. Call Flinku.configure() first.")
         val apiKey = cfg.apiKey ?: throw FlinkuException("apiKey is required to create links")
@@ -93,17 +129,12 @@ object Flinku {
                 "/api/links",
                 body,
                 apiKey,
-                cfg.timeoutMs
+                cfg.timeoutMs,
             )
         }
         return parseCreatedLinkResponse(response)
     }
 
-    /**
-     * Create a short link optimistically: returns immediately with a locally generated
-     * slug and short URL, then registers the link on the server in the background.
-     * Requires [FlinkuConfig.apiKey] (set via [configure]).
-     */
     fun createLinkInstant(options: FlinkuLinkOptions): FlinkuCreatedLink {
         val cfg = config ?: throw FlinkuException("Not configured. Call Flinku.configure() first.")
         val apiKey = cfg.apiKey ?: throw FlinkuException("apiKey is required to create links")
@@ -117,7 +148,7 @@ object Flinku {
                     "/api/links",
                     body,
                     apiKey,
-                    cfg.timeoutMs
+                    cfg.timeoutMs,
                 )
             } catch (e: Exception) {
                 if (cfg.debug) {
@@ -134,9 +165,6 @@ object Flinku {
         )
     }
 
-    /**
-     * Create multiple short links in one request. Requires [FlinkuConfig.apiKey] (set via [configure]).
-     */
     suspend fun createLinks(links: List<FlinkuLinkOptions>): List<FlinkuCreatedLink> {
         val cfg = config ?: throw FlinkuException("Not configured. Call Flinku.configure() first.")
         val apiKey = cfg.apiKey ?: throw FlinkuException("apiKey is required to create links")
@@ -149,41 +177,30 @@ object Flinku {
                 "/api/links/bulk",
                 body,
                 apiKey,
-                cfg.timeoutMs
+                cfg.timeoutMs,
             )
         }
         return parseCreatedLinksFromBody(responseText)
     }
 
-    /**
-     * Returns true if match() has already found a match.
-     * Prevents double-matching across app launches.
-     */
     fun hasMatched(context: Context): Boolean {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getBoolean(KEY_MATCHED, false)
+        return getStore(context).getBoolean(KEY_MATCHED)
     }
 
-    /**
-     * Match the current device to a previously clicked Flinku link.
-     * Call once on app launch — runs on a background thread automatically.
-     * Must be called from a coroutine or background thread.
-     */
     suspend fun match(context: Context): FlinkuLink {
         val cfg = config ?: run {
-            Log.e("Flinku", "Not configured. Call Flinku.configure() first.")
+            log("[Flinku] Not configured. Call Flinku.configure() first.")
             return FlinkuLink.notMatched
         }
 
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val prefsStore = getStore(context)
 
-        // Prevent double matching
-        if (prefs.getBoolean(KEY_MATCHED, false)) {
-            val stored = prefs.getString(KEY_RESULT, null)
+        if (prefsStore.getBoolean(KEY_MATCHED)) {
+            val stored = prefsStore.getString(KEY_RESULT)
             if (stored != null) {
                 return try {
                     FlinkuLink.fromJson(JSONObject(stored))
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     FlinkuLink.notMatched
                 }
             }
@@ -194,11 +211,13 @@ object Flinku {
         val baseUrl = cfg.baseUrl
 
         val result = withContext(Dispatchers.IO) {
-            // 1. Play Install Referrer — deterministic match
             _playReferrer?.let { referrer ->
                 val referrerResult = matchWithBody(
                     cfg,
-                    mapOf("subdomain" to subdomain, "referrer" to referrer)
+                    JSONObject().apply {
+                        put("subdomain", subdomain)
+                        put("referrer", referrer)
+                    },
                 )
                 if (referrerResult.matched) {
                     _playReferrer = null
@@ -206,65 +225,245 @@ object Flinku {
                 }
             }
 
-            // 2. Clipboard — deterministic match
-            try {
-                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                val clipText = cm?.primaryClip?.getItemAt(0)?.text?.toString() ?: ""
-                if (clipText.isNotEmpty() && (clipText.contains(".flku.dev") || clipText.contains(baseUrl))) {
-                    val clipManager =
-                        context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipManager.setPrimaryClip(ClipData.newPlainText("", "")) // clear
-                    val clipResult = matchWithBody(
-                        cfg,
-                        mapOf("subdomain" to subdomain, "clipboardUrl" to clipText)
-                    )
-                    if (clipResult.matched) return@withContext clipResult
+            if (cfg.readClipboard) {
+                try {
+                    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                    val clipText = cm?.primaryClip?.getItemAt(0)?.text?.toString().orEmpty()
+                    if (clipText.isNotEmpty() && (clipText.contains(".flku.dev") || clipText.contains(baseUrl))) {
+                        val clipManager =
+                            context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipManager.setPrimaryClip(ClipData.newPlainText("", ""))
+                        val clipResult = matchWithBody(
+                            cfg,
+                            JSONObject().apply {
+                                put("subdomain", subdomain)
+                                put("clipboardUrl", clipText)
+                            },
+                        )
+                        if (clipResult.matched) return@withContext clipResult
+                    }
+                } catch (_: Exception) {
+                    // ignore
                 }
-            } catch (e: Exception) {
-                // ignore
             }
 
-            // 3. Fingerprint match
-            FlinkuHttp.match(cfg)
+            getNetwork().match(cfg, JSONObject().apply {
+                put("subdomain", subdomain)
+                put("userAgent", System.getProperty("http.agent") ?: "Android")
+            })
         }
 
         if (result.matched) {
-            prefs.edit()
-                .putBoolean(KEY_MATCHED, true)
-                .putString(
-                    KEY_RESULT,
-                    JSONObject().apply {
-                        put("matched", true)
-                        put("deepLink", result.deepLink ?: "")
-                        put("slug", result.slug ?: "")
-                        put("subdomain", result.subdomain ?: "")
-                        put("title", result.title ?: "")
-                        put("projectId", result.projectId ?: "")
-                        put("matchType", result.matchType ?: "")
-                    }.toString()
-                )
-                .apply()
+            persistMatchResult(prefsStore, result)
         }
 
         return result
     }
 
-    /**
-     * Reset stored match result. Use only during development/testing.
-     */
+    fun setUserId(context: Context, userId: String) {
+        val id = userId.trim()
+        if (id.isEmpty()) return
+        warnMissingReferralApiKeyOnce()
+        val prefsStore = getStore(context)
+        prefsStore.putString(KEY_USER_ID, id)
+        trackReferralInBackground(prefsStore, id)
+    }
+
+    fun qualifyReferral(context: Context, event: String? = null) {
+        warnMissingReferralApiKeyOnce()
+        val prefsStore = getStore(context.applicationContext)
+        qualifyReferralInBackground(prefsStore, event)
+    }
+
     fun reset(context: Context) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit()
-            .remove(KEY_MATCHED)
-            .remove(KEY_RESULT)
-            .apply()
+        val prefsStore = getStore(context)
+        prefsStore.remove(KEY_MATCHED)
+        prefsStore.remove(KEY_RESULT)
         _playReferrer = null
     }
 
-    private fun matchWithBody(config: FlinkuConfig, body: Map<String, String>): FlinkuLink {
-        val json = JSONObject()
-        body.forEach { (key, value) -> json.put(key, value) }
-        return FlinkuHttp.matchWithBody(config, json)
+    private fun hasReferralApiKey(): Boolean {
+        val apiKey = config?.apiKey?.trim()
+        return !apiKey.isNullOrEmpty()
+    }
+
+    private fun warnMissingReferralApiKeyOnce() {
+        if (hasReferralApiKey() || referralApiKeyWarningShown) return
+        referralApiKeyWarningShown = true
+        log("[Flinku] Referral tracking skipped: no apiKey configured. Pass apiKey: 'flk_pk_...' to Flinku.configure().")
+    }
+
+    private fun matchWithBody(config: FlinkuConfig, body: JSONObject): FlinkuLink {
+        return getNetwork().match(config, body)
+    }
+
+    private fun persistMatchResult(prefsStore: FlinkuKeyValueStore, result: FlinkuLink) {
+        if (!result.matched) return
+        prefsStore.putBoolean(KEY_MATCHED, true)
+        val payload = JSONObject().apply {
+            put("matched", true)
+            put("deepLink", result.deepLink ?: "")
+            put("slug", result.slug ?: "")
+            put("subdomain", result.subdomain ?: "")
+            put("title", result.title ?: "")
+            put("params", JSONObject(result.params ?: emptyMap<String, Any>()))
+            put("projectId", result.projectId ?: "")
+            put("matchType", result.matchType ?: "")
+            if (!result.linkId.isNullOrEmpty()) put("linkId", result.linkId)
+        }
+        prefsStore.putString(KEY_RESULT, payload.toString())
+        persistPendingReferralIfNeeded(prefsStore, result)
+    }
+
+    private fun persistPendingReferralIfNeeded(prefsStore: FlinkuKeyValueStore, result: FlinkuLink) {
+        if (!result.matched) return
+        val projectId = result.projectId?.trim().orEmpty()
+        if (projectId.isEmpty()) return
+
+        val params = result.params ?: return
+        val referrerRaw = params["referrerId"] ?: params["referrer_id"]
+        val referrerId = referrerRaw?.toString()?.trim()?.takeIf { it.isNotEmpty() } ?: return
+
+        val labelRaw = params["referrerLabel"] ?: params["referrer_label"]
+        val referrerLabel = labelRaw?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+
+        val linkId = result.linkId?.trim()?.takeIf { it.isNotEmpty() }
+            ?: result.slug?.trim()?.takeIf { it.isNotEmpty() }
+
+        val value = JSONObject().apply {
+            put("referrerId", referrerId)
+            put("matchedAt", System.currentTimeMillis() / 1000.0)
+            if (referrerLabel != null) put("referrerLabel", referrerLabel)
+            if (linkId != null) put("linkId", linkId)
+        }
+
+        prefsStore.putString(pendingReferralKey(projectId), value.toString())
+        prefsStore.putString(KEY_REFERRAL_PROJECT_ID, projectId)
+    }
+
+    private fun loadPendingReferral(prefsStore: FlinkuKeyValueStore): Pair<String, JSONObject>? {
+        for (key in prefsStore.allKeys().toList()) {
+            if (!key.startsWith(PENDING_REFERRAL_KEY_PREFIX)) continue
+            val projectId = key.removePrefix(PENDING_REFERRAL_KEY_PREFIX)
+            if (projectId.isEmpty()) continue
+
+            val raw = prefsStore.getString(key) ?: continue
+            val json = try {
+                JSONObject(raw)
+            } catch (_: Exception) {
+                continue
+            }
+
+            val matchedAt = when (val v = json.opt("matchedAt")) {
+                is Number -> v.toDouble()
+                else -> {
+                    prefsStore.remove(key)
+                    continue
+                }
+            }
+
+            val nowSeconds = System.currentTimeMillis() / 1000.0
+            if (nowSeconds - matchedAt > PENDING_REFERRAL_TTL_MS / 1000.0) {
+                prefsStore.remove(key)
+                continue
+            }
+
+            val referrerId = json.optString("referrerId", "").trim()
+            if (referrerId.isEmpty()) {
+                prefsStore.remove(key)
+                continue
+            }
+
+            return projectId to json
+        }
+        return null
+    }
+
+    private fun clearPendingReferral(prefsStore: FlinkuKeyValueStore, projectId: String) {
+        prefsStore.remove(pendingReferralKey(projectId))
+    }
+
+    private fun trackReferralInBackground(prefsStore: FlinkuKeyValueStore, userId: String) {
+        val cfg = config ?: return
+        if (!hasReferralApiKey()) return
+        val pending = loadPendingReferral(prefsStore) ?: return
+        val projectId = pending.first
+        val json = pending.second
+
+        val trackedKey = referralTrackedKey(projectId, userId)
+        if (prefsStore.getBoolean(trackedKey)) {
+            clearPendingReferral(prefsStore, projectId)
+            return
+        }
+
+        val referrerId = json.optString("referrerId", "").trim()
+        if (referrerId.isEmpty()) {
+            clearPendingReferral(prefsStore, projectId)
+            return
+        }
+
+        val referrerLabel = json.optString("referrerLabel", "").trim().takeIf { it.isNotEmpty() }
+        val linkId = json.optString("linkId", "").trim().takeIf { it.isNotEmpty() }
+
+        val body = JSONObject().apply {
+            put("projectId", projectId)
+            put("referrerId", referrerId)
+            put("newUserId", userId)
+            if (referrerLabel != null) put("referrerLabel", referrerLabel)
+            if (linkId != null) put("linkId", linkId)
+        }
+
+        prefsStore.putString(KEY_REFERRAL_PROJECT_ID, projectId)
+
+        getNetwork().postReferral(
+            cfg.apiBaseUrl,
+            "/api/referrals/track",
+            body,
+            cfg.apiKey!!.trim(),
+            cfg.timeoutMs,
+        ) { success ->
+            if (!success) return@postReferral
+            prefsStore.putBoolean(trackedKey, true)
+            clearPendingReferral(prefsStore, projectId)
+        }
+    }
+
+    private fun qualifyReferralInBackground(prefsStore: FlinkuKeyValueStore, event: String?) {
+        val cfg = config ?: return
+        if (!hasReferralApiKey()) return
+        val userId = prefsStore.getString(KEY_USER_ID)?.trim().orEmpty()
+        if (userId.isEmpty()) return
+
+        var projectId = prefsStore.getString(KEY_REFERRAL_PROJECT_ID)?.trim().orEmpty()
+        if (projectId.isEmpty()) {
+            projectId = loadPendingReferral(prefsStore)?.first.orEmpty()
+        }
+        if (projectId.isEmpty()) {
+            val stored = prefsStore.getString(KEY_RESULT)
+            if (stored != null) {
+                try {
+                    projectId = JSONObject(stored).optString("projectId", "").trim()
+                } catch (_: Exception) {
+                    // ignore
+                }
+            }
+        }
+        if (projectId.isEmpty()) return
+
+        val body = JSONObject().apply {
+            put("projectId", projectId)
+            put("newUserId", userId)
+            val trimmed = event?.trim()
+            if (!trimmed.isNullOrEmpty()) put("event", trimmed)
+        }
+
+        getNetwork().postReferral(
+            cfg.apiBaseUrl,
+            "/api/referrals/qualify",
+            body,
+            cfg.apiKey!!.trim(),
+            cfg.timeoutMs,
+        ) { }
     }
 
     private fun generateInstantSlug(title: String): String {

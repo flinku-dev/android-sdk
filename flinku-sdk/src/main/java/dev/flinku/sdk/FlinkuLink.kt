@@ -11,7 +11,8 @@ data class FlinkuLink(
     val params: Map<String, Any>? = null,
     val clickedAt: String? = null,
     val projectId: String? = null,
-    val matchType: String? = null
+    val matchType: String? = null,
+    val linkId: String? = null,
 ) {
     companion object {
         val notMatched = FlinkuLink(matched = false)
@@ -26,6 +27,12 @@ data class FlinkuLink(
                 map
             } else null
 
+            val linkIdRaw = when {
+                json.has("linkId") && !json.isNull("linkId") -> json.optString("linkId")
+                json.has("id") && !json.isNull("id") -> json.optString("id")
+                else -> ""
+            }
+
             return FlinkuLink(
                 matched = json.optBoolean("matched", false),
                 deepLink = json.optString("deepLink").takeIf { it.isNotEmpty() },
@@ -35,7 +42,8 @@ data class FlinkuLink(
                 params = params,
                 clickedAt = json.optString("clickedAt").takeIf { it.isNotEmpty() },
                 projectId = json.optString("projectId").takeIf { it.isNotEmpty() },
-                matchType = json.optString("matchType").takeIf { it.isNotEmpty() }
+                matchType = json.optString("matchType").takeIf { it.isNotEmpty() },
+                linkId = linkIdRaw.takeIf { it.isNotEmpty() },
             )
         }
     }

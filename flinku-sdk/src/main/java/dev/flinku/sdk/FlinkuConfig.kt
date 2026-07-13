@@ -6,7 +6,8 @@ data class FlinkuConfig(
     val baseUrl: String,
     val apiKey: String? = null,
     val debug: Boolean = false,
-    val timeoutMs: Long = 5000L
+    val timeoutMs: Long = 5000L,
+    val readClipboard: Boolean = true,
 ) {
     /**
      * Extracts subdomain from baseUrl
