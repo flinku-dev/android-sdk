@@ -24,6 +24,8 @@ object Flinku {
     private const val KEY_USER_ID = "flinku_user_id"
     private const val KEY_REFERRAL_PROJECT_ID = "flinku_referral_project_id"
     private const val PENDING_REFERRAL_KEY_PREFIX = "flinku_pending_referral_"
+    private const val KEY_PENDING_REFERRAL_INDEX = "flinku_pending_referral_index"
+    private const val REFERRAL_TRACKED_KEY_PREFIX = "referral_tracked_"
     private const val PENDING_REFERRAL_TTL_MS = 30L * 24 * 60 * 60 * 1000
 
     /** Injectable persistence (defaults to SharedPreferences on [configure]). */
@@ -39,7 +41,7 @@ object Flinku {
     var logSink: ((String) -> Unit)? = null
 
     private fun referralTrackedKey(projectId: String, userId: String) =
-        "referral_tracked_${projectId}_$userId"
+        "${REFERRAL_TRACKED_KEY_PREFIX}${projectId}_$userId"
 
     private fun pendingReferralKey(projectId: String) = "$PENDING_REFERRAL_KEY_PREFIX$projectId"
 
@@ -282,6 +284,35 @@ object Flinku {
         _playReferrer = null
     }
 
+    /**
+     * Clears all Flinku local state, including referral attribution and stored user id.
+     *
+     * **Testing only — do not call in production.** Clearing attribution destroys
+     * real referral data. [reset] was narrowed in 0.6.0 so production deep-link
+     * handling does not wipe referrals; use [resetAll] only for a full wipe in
+     * development or QA.
+     */
+    fun resetAll(context: Context) {
+        reset(context)
+        val prefsStore = getStore(context)
+        prefsStore.remove(KEY_USER_ID)
+        prefsStore.remove(KEY_REFERRAL_PROJECT_ID)
+        prefsStore.remove(KEY_RESULT)
+
+        for (projectId in getPendingReferralIndex(prefsStore)) {
+            prefsStore.remove(pendingReferralKey(projectId))
+        }
+        prefsStore.remove(KEY_PENDING_REFERRAL_INDEX)
+
+        for (key in prefsStore.allKeys()) {
+            if (key.startsWith(PENDING_REFERRAL_KEY_PREFIX) ||
+                key.startsWith(REFERRAL_TRACKED_KEY_PREFIX)
+            ) {
+                prefsStore.remove(key)
+            }
+        }
+    }
+
     private fun hasReferralApiKey(): Boolean {
         val apiKey = config?.apiKey?.trim()
         return !apiKey.isNullOrEmpty()
@@ -339,6 +370,32 @@ object Flinku {
 
         prefsStore.putString(pendingReferralKey(projectId), value.toString())
         prefsStore.putString(KEY_REFERRAL_PROJECT_ID, projectId)
+        addPendingReferralIndex(prefsStore, projectId)
+    }
+
+    private fun getPendingReferralIndex(prefsStore: FlinkuKeyValueStore): List<String> {
+        val raw = prefsStore.getString(KEY_PENDING_REFERRAL_INDEX)?.trim().orEmpty()
+        if (raw.isNotEmpty()) {
+            return raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        }
+        val pid = prefsStore.getString(KEY_REFERRAL_PROJECT_ID)?.trim().orEmpty()
+        return if (pid.isNotEmpty()) listOf(pid) else emptyList()
+    }
+
+    private fun addPendingReferralIndex(prefsStore: FlinkuKeyValueStore, projectId: String) {
+        val ids = getPendingReferralIndex(prefsStore).toMutableList()
+        if (!ids.contains(projectId)) ids.add(projectId)
+        prefsStore.putString(KEY_PENDING_REFERRAL_INDEX, ids.joinToString(","))
+    }
+
+    private fun removePendingReferralIndex(prefsStore: FlinkuKeyValueStore, projectId: String) {
+        val ids = getPendingReferralIndex(prefsStore).toMutableList()
+        ids.removeAll { it == projectId }
+        if (ids.isEmpty()) {
+            prefsStore.remove(KEY_PENDING_REFERRAL_INDEX)
+        } else {
+            prefsStore.putString(KEY_PENDING_REFERRAL_INDEX, ids.joinToString(","))
+        }
     }
 
     private fun loadPendingReferral(prefsStore: FlinkuKeyValueStore): Pair<String, JSONObject>? {
@@ -365,6 +422,7 @@ object Flinku {
             val nowSeconds = System.currentTimeMillis() / 1000.0
             if (nowSeconds - matchedAt > PENDING_REFERRAL_TTL_MS / 1000.0) {
                 prefsStore.remove(key)
+                removePendingReferralIndex(prefsStore, projectId)
                 continue
             }
 
@@ -381,6 +439,7 @@ object Flinku {
 
     private fun clearPendingReferral(prefsStore: FlinkuKeyValueStore, projectId: String) {
         prefsStore.remove(pendingReferralKey(projectId))
+        removePendingReferralIndex(prefsStore, projectId)
     }
 
     private fun trackReferralInBackground(prefsStore: FlinkuKeyValueStore, userId: String) {

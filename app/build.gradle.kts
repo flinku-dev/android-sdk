@@ -21,7 +21,7 @@ android {
         minSdk = 21
         targetSdk = 35
         versionCode = 1
-        versionName = "0.6.0"
+        versionName = "0.7.0"
 
         val baseUrl = localProperties.getProperty("flinku.base.url", "https://yourapp.flku.dev") ?: ""
         val apiKey = localProperties.getProperty("flinku.api.key", "") ?: ""
