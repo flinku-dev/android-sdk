@@ -9,6 +9,12 @@ import java.nio.charset.StandardCharsets
 
 internal object FlinkuHttp {
 
+    /** When set, handles POST /api/links style calls in unit tests. */
+    @Volatile
+    var postAuthorizedJsonInterceptor:
+        ((apiBaseUrl: String, path: String, body: JSONObject, apiKey: String, timeoutMs: Long) -> JSONObject)? =
+        null
+
     fun postAuthorizedJson(
         apiBaseUrl: String,
         path: String,
@@ -16,6 +22,7 @@ internal object FlinkuHttp {
         apiKey: String,
         timeoutMs: Long
     ): JSONObject {
+        postAuthorizedJsonInterceptor?.let { return it(apiBaseUrl, path, body, apiKey, timeoutMs) }
         var connection: HttpURLConnection? = null
         try {
             val url = URL("${apiBaseUrl.trimEnd('/')}$path")
@@ -41,7 +48,7 @@ internal object FlinkuHttp {
             } ?: ""
 
             if (code !in 200..299) {
-                throw FlinkuException(linkCreationErrorMessage(text, code))
+                throw FlinkuHttpException(linkCreationErrorMessage(text, code), code)
             }
             return JSONObject(text)
         } finally {

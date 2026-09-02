@@ -1,5 +1,5 @@
 group = "dev.flinku"
-version = "0.7.0"
+version = "0.7.1"
 
 plugins {
     alias(libs.plugins.android.library)

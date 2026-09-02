@@ -70,6 +70,7 @@ object Flinku {
         network = null
         logSink = null
         _playReferrer = null
+        FlinkuHttp.postAuthorizedJsonInterceptor = null
     }
 
     fun configure(
@@ -143,20 +144,9 @@ object Flinku {
         val slug = generateInstantSlug(options.title)
         val shortUrl = "https://${cfg.subdomain}.flku.dev/$slug"
         val body = options.toJsonObject().apply { put("slug", slug) }
+        // Retries run in the background; if the process dies mid-retry, attempts stop.
         CoroutineScope(Dispatchers.IO).launch {
-            try {
-                FlinkuHttp.postAuthorizedJson(
-                    cfg.apiBaseUrl,
-                    "/api/links",
-                    body,
-                    apiKey,
-                    cfg.timeoutMs,
-                )
-            } catch (e: Exception) {
-                if (cfg.debug) {
-                    Log.e("Flinku", "createLinkInstant background error: ${e.message}")
-                }
-            }
+            postCreateLinkInstantWithRetry(cfg, body, apiKey)
         }
         return FlinkuCreatedLink(
             id = "",
@@ -166,6 +156,46 @@ object Flinku {
             params = options.params,
         )
     }
+
+    private suspend fun postCreateLinkInstantWithRetry(
+        cfg: FlinkuConfig,
+        body: org.json.JSONObject,
+        apiKey: String,
+    ) {
+        val backoffs = listOf(1000L, 2000L, 4000L)
+        var lastMessage = "Failed to create link"
+        repeat(3) { attempt ->
+            try {
+                FlinkuHttp.postAuthorizedJson(
+                    cfg.apiBaseUrl,
+                    "/api/links",
+                    body,
+                    apiKey,
+                    cfg.timeoutMs,
+                )
+                return
+            } catch (e: FlinkuHttpException) {
+                lastMessage = e.message ?: lastMessage
+                if (!isRetryableInstantLinkStatus(e.statusCode)) {
+                    if (cfg.debug) {
+                        Log.e("Flinku", "createLinkInstant background error: $lastMessage")
+                    }
+                    return
+                }
+            } catch (e: Exception) {
+                lastMessage = e.message ?: lastMessage
+            }
+            if (attempt < 2) {
+                kotlinx.coroutines.delay(backoffs[attempt])
+            }
+        }
+        if (cfg.debug) {
+            Log.e("Flinku", "createLinkInstant background error: $lastMessage")
+        }
+    }
+
+    private fun isRetryableInstantLinkStatus(code: Int): Boolean =
+        code == 429 || code >= 500
 
     suspend fun createLinks(links: List<FlinkuLinkOptions>): List<FlinkuCreatedLink> {
         val cfg = config ?: throw FlinkuException("Not configured. Call Flinku.configure() first.")

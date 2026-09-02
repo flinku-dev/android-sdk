@@ -1,3 +1,7 @@
+## 0.7.1 — 2026-09-03
+
+* `createLinkInstant` retries the background POST up to three times (1s, 2s, 4s backoff) on transient failures. Terminal HTTP errors (400, 403, 409) are not retried.
+
 ## 0.7.0 — 2026-07-21
 
 * `Flinku.resetAll(context)` — testing-only full local wipe (match cache, user id, pending referral, tracked-once flags). Does not change `reset()` behaviour.
